@@ -57,3 +57,13 @@ credentials/
 # Docker credentials
 docker-config.json
 .dockercfg
+
+# Claude related files
+.claude/
+CLAUDE.md
+SuperClaude/
+.claude_files/
+*.claude
+.claude_cache/
+claude_session/
+.claude_history
