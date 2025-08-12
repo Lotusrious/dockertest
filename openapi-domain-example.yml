@@ -1,0 +1,825 @@
+openapi: 3.0.3
+info:
+  title: Travel Agent API - Domain-Driven Design
+  version: 1.0.0
+  description: |
+    도메인 중심 설계 기반 Travel Agent 백엔드 API
+    
+    ## 도메인 구조
+    - **Authentication**: 사용자 인증/인가
+    - **User Management**: 사용자 프로필 관리
+    - **AI Chat**: AI 채팅 및 선호도 학습
+    - **Trip Planning**: 여행 계획 관리
+    - **Reviews**: 여행 후기 시스템
+    - **Media**: 사진/파일 관리
+    - **Billing**: 결제/크레딧 관리
+    - **Sharing**: 여행 공유 기능
+    - **Recommendations**: 개인화 추천
+
+servers:
+  - url: https://api.travel-agent.com/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Development
+
+# 도메인별 태그 정의
+tags:
+  - name: Authentication
+    description: 사용자 인증 및 토큰 관리
+  - name: Users
+    description: 사용자 프로필 관리
+  - name: AI Chat
+    description: AI 채팅 및 선호도 학습 시스템
+  - name: Trips
+    description: 여행 계획 관리
+  - name: Reviews
+    description: 여행 후기 및 평점 시스템
+  - name: Media
+    description: 사진 및 미디어 파일 관리
+  - name: Billing
+    description: 결제 및 크레딧 관리
+  - name: Sharing
+    description: 여행 공유 기능
+  - name: Recommendations
+    description: 개인화 추천 시스템
+
+# 보안 스키마
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT 토큰을 사용한 인증
+
+  # 공통 스키마
+  schemas:
+    # 공통 응답 구조
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "작업이 성공적으로 완료되었습니다"
+        data:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+          
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          example: "입력 값이 유효하지 않습니다"
+        details:
+          type: object
+          additionalProperties: true
+        timestamp:
+          type: string
+          format: date-time
+
+    PaginationResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {}
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            size:
+              type: integer
+              example: 20
+            total:
+              type: integer
+              example: 100
+            hasNext:
+              type: boolean
+              example: true
+            nextCursor:
+              type: string
+              nullable: true
+
+    # Domain 1: Authentication
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: "password123!"
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIs..."
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/UserProfile"
+
+    # Domain 2: User Management
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          example: "홍길동"
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+        preferences:
+          $ref: "#/components/schemas/UserPreferences"
+        createdAt:
+          type: string
+          format: date-time
+
+    UserPreferences:
+      type: object
+      properties:
+        travelStyle:
+          type: array
+          items:
+            type: string
+            enum: [휴양, 관광, 모험, 문화체험, 음식탐방]
+        budgetRange:
+          type: object
+          properties:
+            min:
+              type: integer
+              minimum: 0
+            max:
+              type: integer
+        interests:
+          type: array
+          items:
+            type: string
+        companionType:
+          type: string
+          enum: [혼자, 가족, 친구, 연인, 단체]
+
+    # Domain 3: AI Chat
+    ChatThread:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "제주도 여행 계획 상담"
+        status:
+          type: string
+          enum: [active, completed, archived]
+        createdAt:
+          type: string
+          format: date-time
+        lastMessageAt:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        threadId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          example: "3박 4일 제주도 여행을 계획하고 있어요"
+        analysis:
+          $ref: "#/components/schemas/MessageAnalysis"
+        createdAt:
+          type: string
+          format: date-time
+
+    MessageAnalysis:
+      type: object
+      properties:
+        extractedPreferences:
+          type: object
+          properties:
+            destination:
+              type: string
+            duration:
+              type: string
+            budget:
+              type: integer
+            interests:
+              type: array
+              items:
+                type: string
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+
+    # Domain 4: Trip Planning
+    Trip:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: "제주도 힐링 여행"
+        destination:
+          type: string
+          example: "제주도"
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [planned, ongoing, completed, cancelled]
+        budget:
+          type: integer
+          minimum: 0
+        participants:
+          type: integer
+          minimum: 1
+          default: 1
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Schedule"
+        createdAt:
+          type: string
+          format: date-time
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        day:
+          type: integer
+          minimum: 1
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        place:
+          $ref: "#/components/schemas/Place"
+        activity:
+          type: string
+          example: "성산일출봉 관광"
+        memo:
+          type: string
+          nullable: true
+
+    Place:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "성산일출봉"
+        address:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        category:
+          type: string
+          example: "관광지"
+
+    # Domain 5: Reviews
+    TripReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        title:
+          type: string
+          example: "정말 힐링되는 제주도 여행이었어요"
+        content:
+          type: string
+        photos:
+          type: array
+          items:
+            type: string
+            format: uri
+        tags:
+          type: array
+          items:
+            type: string
+        isPublic:
+          type: boolean
+          default: true
+        createdAt:
+          type: string
+          format: date-time
+
+    # Domain 6: Media
+    Photo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        url:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+        size:
+          type: integer
+        mimeType:
+          type: string
+        analysis:
+          $ref: "#/components/schemas/PhotoAnalysis"
+        uploadedAt:
+          type: string
+          format: date-time
+
+    PhotoAnalysis:
+      type: object
+      properties:
+        landmarks:
+          type: array
+          items:
+            type: string
+        objects:
+          type: array
+          items:
+            type: string
+        colors:
+          type: array
+          items:
+            type: string
+        mood:
+          type: string
+          example: "peaceful"
+
+    # Domain 7: Billing
+    CreditBalance:
+      type: object
+      properties:
+        balance:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          default: "KRW"
+        lastUpdated:
+          type: string
+          format: date-time
+
+    PaymentOrder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+        credits:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [pending, completed, failed, cancelled]
+        paymentMethod:
+          type: string
+          example: "kakaopay"
+        createdAt:
+          type: string
+          format: date-time
+
+    # Domain 8: Sharing
+    ShareToken:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "abc123def456"
+        tripId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        permissions:
+          type: array
+          items:
+            type: string
+            enum: [read]
+        createdAt:
+          type: string
+          format: date-time
+
+    # Domain 9: Recommendations
+    RecommendationResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [destination, activity, restaurant, accommodation]
+        title:
+          type: string
+        description:
+          type: string
+        score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        reasons:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+# API 경로 정의 (도메인별)
+paths:
+  # Domain 1: Authentication
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: 로그인
+      description: 이메일과 비밀번호로 로그인하여 JWT 토큰을 발급받습니다.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: 인증 실패
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Domain 3: AI Chat
+  /chat/threads:
+    get:
+      tags: [AI Chat]
+      summary: 채팅 스레드 목록 조회
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: 채팅 스레드 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PaginationResponse"
+                        
+    post:
+      tags: [AI Chat]
+      summary: 새 채팅 스레드 생성
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: "제주도 여행 계획 상담"
+      responses:
+        "201":
+          description: 채팅 스레드 생성 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ChatThread"
+
+  /chat/threads/{threadId}/messages:
+    post:
+      tags: [AI Chat]
+      summary: 채팅 메시지 전송
+      description: |
+        사용자 메시지를 전송하고 AI 응답을 받습니다.
+        실시간으로 선호도 분석이 수행됩니다.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  example: "3박 4일 제주도 여행을 계획하고 있어요"
+      responses:
+        "200":
+          description: AI 응답 및 분석 결과
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          userMessage:
+                            $ref: "#/components/schemas/ChatMessage"
+                          assistantMessage:
+                            $ref: "#/components/schemas/ChatMessage"
+
+  # Domain 4: Trip Planning
+  /trips:
+    get:
+      tags: [Trips]
+      summary: 여행 계획 목록 조회
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [planned, ongoing, completed, cancelled]
+      responses:
+        "200":
+          description: 여행 계획 목록
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PaginationResponse"
+
+    post:
+      tags: [Trips]
+      summary: 새 여행 계획 생성
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, destination, startDate, endDate]
+              properties:
+                title:
+                  type: string
+                  example: "제주도 힐링 여행"
+                destination:
+                  type: string
+                  example: "제주도"
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                budget:
+                  type: integer
+                  minimum: 0
+                participants:
+                  type: integer
+                  minimum: 1
+                  default: 1
+      responses:
+        "201":
+          description: 여행 계획 생성 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Trip"
+
+  /trips/{tripId}/complete:
+    post:
+      tags: [Trips]
+      summary: 여행 완료 처리
+      description: |
+        여행을 완료 상태로 변경합니다.
+        완료 후 후기 작성이 가능해집니다.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: tripId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 여행 완료 처리 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Trip"
+
+  # Domain 5: Reviews  
+  /reviews:
+    post:
+      tags: [Reviews]
+      summary: 여행 후기 작성
+      description: 완료된 여행에 대한 후기를 작성합니다.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tripId, rating, title, content]
+              properties:
+                tripId:
+                  type: string
+                  format: uuid
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                title:
+                  type: string
+                content:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                isPublic:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: 후기 작성 성공
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TripReview"
+
+  # Domain 9: Recommendations
+  /recommendations:
+    get:
+      tags: [Recommendations]
+      summary: 개인화 추천 조회
+      description: |
+        사용자의 선호도와 여행 이력을 바탕으로
+        개인화된 추천을 제공합니다.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [destination, activity, restaurant, accommodation]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        "200":
+          description: 추천 결과
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/RecommendationResult"

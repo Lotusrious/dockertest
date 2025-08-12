@@ -1,0 +1,271 @@
+프로젝트 개요
+	•	이름(가칭): Travel Agent
+	•	기간: 2025-08-25 ~ 2025-10-01 (BE 우선 → FE 연동, 애자일)
+	•	목표: 여행 단서(티켓/목적지/사진)를 수집→분석→DB 저장→재활용하여 일정·동선·포토스팟·주의사항을 카드형 UI + TTS로 제공하는 여행 특화 에이전트
+	•	차별점: 여행 주제 고정, LLM 결과 구조화 저장 & 재활용, 날씨/혼잡/후기 결합, 비용 최소화, 모바일 웹 접근성 최적화
+
+⸻
+
+핵심 기능(간단)
+	•	온보딩/프로필(여행 스타일·선호 + 사진 최대 8장 - 최소 1장)
+	•	플래너: 기간/제약 기반 일정 생성(동선 최적화·대체안) → DB 저장
+	•	사진 분석: 사진 1장으로 위치/문맥 추정(EXIF/비전/역지오코딩) + 포토스팟/주의/주변추천
+	•	후기·트렌드 요약: SNS/블로그에서 포토스팟·주의사항 추출
+	•	네비/시간관리: 경로·시간·비용·영업/막차 경고, 타임박싱
+	•	감시 & 알림: 저장된 일정 감시(날씨/변경) → 이메일·웹푸시(→ 카카오 확장)
+	•	커뮤니티/공유: 지역 채팅(WebSocket), 일정 공유(링크/QR)
+	•	크레딧 결제(Mock KakaoPay): 15,000원 = 300 크레딧
+	•	관리자 콘솔: 사용자/플랜/신고/크레딧·비용/감시 규칙/키 관리/감사 로그
+
+⸻
+
+모바일 UX & 유도
+	•	모바일 퍼스트(WCAG 2.2 AA): 큰 터치 타겟, 명암/다크 모드, 바텀시트, PWA, TTS 버튼
+	•	GPT 하단 퀵 액션 버튼: 일정 생성 · 근처 추천 · 포토스팟 · 맛집/카페 · 날씨·혼잡 · 일정 공유
+	•	사이드바: 채팅방별 플랜 관리(상태 뱃지, 공유/복제/삭제/알림)
+	•	주제 유도: 비여행 질문은 목적지/기간 등 역질문 → 기능 버튼 흐름으로 전환
+
+⸻
+
+LLM 운용 & 프롬프트
+	•	기본: Gemini 2.5 Flash (멀티모달, 0.3$/M 토큰)
+	•	승격(1회 제한): 텍스트 고난도→Gemini 2.5 Pro, 복잡 비전→GPT-4o
+	•	OCR 파이프라인: 전용 OCR → Flash로 정규화만(LLM OCR 금지)
+	•	페르소나: “여행 컨시어지” (간결/친절/현장감, 여행 맥락 유지)
+	•	출력: JSON 스키마 강제, max_output_tokens 256~512, 캐시 우선
+
+⸻
+
+사진 업로드 → 문맥형 응답 파이프라인(간단)
+	1.	위치 후보: EXIF(GPS/시간) → 실패 시 브라우저 위치 → 실패 시 비전(랜드마크/OCR) + 역지오코딩
+	2.	비전 분석: Flash Vision 1차, 필요 시 GPT-4o 승격(1회)
+	3.	문맥 결합: 내 Trip/Schedule, 날씨, 주변 Place 캐시 결합
+	4.	카드 응답: 장소 후보 확인, 포토스팟/포즈 팁, 주변 추천, 주의사항(+TTS)
+	5.	저장: PhotoAnalysis로 결과 캐시(동일 장소 재업로드시 0원)
+
+⸻
+
+비용/중복 호출 방지(원칙)
+	•	무료·저가 우선: Kakao/Naver/OSM, Gemini Flash
+	•	고가 API 예외 호출: Google Places/GPT-4o/이미지 생성은 사전 크레딧 안내 후
+	•	캐시/재사용: 동일·유사 요청은 DB/Redis 재사용, 응답 TTL/ETag
+	•	요청 병합: 동시 동일 키는 1회 외부 호출(Single-Flight)
+	•	멱등성: 티켓 파싱·일정 생성·이미지 생성은 멱등 키
+	•	필드 최소: Places fields 최소화, Autocomplete 세션 토큰, 입력 디바운스
+
+⸻
+
+크레딧/결제
+	•	정가: 15,000원 = 300 크레딧(1 크레딧 ≈ 2,000 토큰, Flash 원가≈0.8원/크레딧 수준)
+	•	흐름: POST /billing/orders → Mock KakaoPay → webhook /billing/kakaopay/webhook → CreditLedger(+300) → User.credits 갱신
+	•	사용 전 견적 표시 → 동의 시 홀드 → 실제 사용량 정산
+
+⸻
+
+DB 설계(단순 + 성능 우선)
+
+핵심 테이블(최소화된 정규화)
+	•	users(id, email, role, credits, created_at)
+	•	user_profile(user_id PK, style, prefs_json, photos_json)  ← JSON 컬럼로 단순화
+	•	chat_threads(id, user_id, title, created_at)
+	•	trips(id, user_id, thread_id, title, start_date, end_date, ai_summary, ai_tags, ai_notes, watch_enabled, created_at)
+	•	schedules(id, trip_id, day, start_time, end_time, place_id, tags, weather_risk)
+	•	places(id, name, lat, lng, category, meta_json)
+	•	trend_reviews(id, place_id, source, url, summary, tips_json, crowd_hours_json, photo_spots_json, created_at)
+	•	agent_messages(id, user_id, thread_id, trip_id, role, content_json, created_at)
+	•	documents(id, user_id, type, s3_url, parsed_json, created_at)
+	•	photo_analysis(id, user_id, exif_json, place_candidates_json, context_json, tips_json, created_at)
+	•	share_tokens(id, trip_id, scope, token, expires_at, created_by)
+	•	notification_channels(id, user_id, type, meta_json, enabled)
+	•	notification_jobs(id, user_id, schedule_id, send_at, channel, payload_json, status)
+	•	credit_ledger(id, user_id, delta, reason, provider, tokens, cost, created_at)
+	•	admin_audit_log(id, admin_id, action, target_type, target_id, meta_json, created_at)
+
+필수 인덱스(간단·효과 큰 것만)
+	•	FK 기본 인덱스 + 아래 조합:
+	•	trips(user_id, start_date, end_date)  (사용자별 조회·감시 스캔)
+	•	schedules(trip_id, day, start_time)   (플래너/감시 스캔)
+	•	places(category, lat, lng) + PostGIS/지오해시 대체로 lat,lng bbox 인덱스
+	•	trend_reviews(place_id, created_at)   (신규 요약 우선)
+	•	agent_messages(user_id, thread_id, created_at)
+	•	credit_ledger(user_id, created_at)
+	•	share_tokens(token, expires_at)
+	•	JSON 컬럼: 자주 조회하는 키는 생성 컬럼(generated column) + 인덱스 고려(후기 crowd_hours_json->day 등)
+
+성능·단순화 가이드
+	•	1차 정규화 + 얕은 JSON 혼합(스키마 복잡도↓, 마이그레이션 리스크↓)
+	•	핫패스 캐시: 장소 요약/경로 매트릭스/날씨/역지오코딩 2h~72h 캐시
+	•	페이지네이션: keyset 기반(created_at, id)
+	•	단순 조인 우선: N+1 방지(필요 필드만 select)
+	•	비동기 작업: OCR/요약/크롤링/알림은 큐 처리
+
+⸻
+
+API·모델 운용(요약)
+	•	LLM 라우팅: Flash 기본 → 품질 미달 시 1회 승격(Pro/4o)
+	•	토큰 상한: 엔드포인트별 max tokens 정책 파일
+	•	로깅: 모델/토큰/캐시 HIT/승격률/Places 호출량을 월별 대시보드로
+	•	권한: 모든 레코드 user_id 소유, Admin은 콘솔에서만(감사 로그 필수)
+
+⸻
+
+감시 & 알림(간단)
+	•	스케줄러(2~4회/일) → trips/schedules 스캔 → 날씨 API → weather_risk 갱신
+	•	임계 초과 시 대체안 초안 생성 → 사용자에게 알림(승인시 /trips/{id}/replan)
+	•	알림: 이메일/웹푸시(초기) → 카카오 알림톡 확장(중요 알림만)
+
+⸻
+
+외부 API 정책
+	•	지도/경로: Kakao/Naver/OSM 우선, Google Places는 최소 필드·세션토큰·디바운스·DB 캐시
+	•	날씨: 기상청(국내)/OpenWeather(해외)
+	•	후기 수집: MCP/크롤링 → 부분요약→합성요약(저토큰)
+
+⸻
+
+스프린트 개요(초간단)
+	1.	주차1: 유스케이스, 간결 ERD, API 초안, 도커, Auth 뼈대
+	2.	주차2–3(BE): 플래너/경로/사진분석 파이프라인, 파싱·저장, 캐시, 크레딧/로그
+	3.	주차4: 감시/알림, 공유/커뮤니티, 관리자 콘솔 1차, 비용 가드레일
+	4.	주차5–6(FE+고도화): 퀵 액션/사이드바, 접근성 튜닝, 결제(Mock), 통합 테스트/배포
+
+⸻
+
+고도화 로드맵(요약)
+	•	플래너 고도화: 제약 기반 최적화(예산/이동/체력), 영업/막차 하드컨스트레인트, 혼잡·날씨 가중치, 대체안 N개, 취향 학습
+	•	여행 메이트 매칭: 일정/취향 겹침 필터 → 스코어링 → 매칭 요청/수락 → DM(WebSocket), 신고/차단/리뷰프로젝트 개요
+	•	이름(가칭): Travel Agent
+	•	기간: 2025-08-25 ~ 2025-10-01 (BE 우선 → FE 연동, 애자일)
+	•	목표: 여행 단서(티켓/목적지/사진)를 수집→분석→DB 저장→재활용하여 일정·동선·포토스팟·주의사항을 카드형 UI + TTS로 제공하는 여행 특화 에이전트
+	•	차별점: 여행 주제 고정, LLM 결과 구조화 저장 & 재활용, 날씨/혼잡/후기 결합, 비용 최소화, 모바일 웹 접근성 최적화
+
+⸻
+
+핵심 기능(간단)
+	•	온보딩/프로필(여행 스타일·선호 + 사진 6장)
+	•	플래너: 기간/제약 기반 일정 생성(동선 최적화·대체안) → DB 저장
+	•	사진 분석: 사진 1장으로 위치/문맥 추정(EXIF/비전/역지오코딩) + 포토스팟/주의/주변추천
+	•	후기·트렌드 요약: SNS/블로그에서 포토스팟·주의사항 추출
+	•	네비/시간관리: 경로·시간·비용·영업/막차 경고, 타임박싱
+	•	감시 & 알림: 저장된 일정 감시(날씨/변경) → 이메일·웹푸시(→ 카카오 확장)
+	•	커뮤니티/공유: 지역 채팅(WebSocket), 일정 공유(링크/QR)
+	•	크레딧 결제(Mock KakaoPay): 15,000원 = 300 크레딧
+	•	관리자 콘솔: 사용자/플랜/신고/크레딧·비용/감시 규칙/키 관리/감사 로그
+
+⸻
+
+모바일 UX & 유도
+	•	모바일 퍼스트(WCAG 2.2 AA): 큰 터치 타겟, 명암/다크 모드, 바텀시트, PWA, TTS 버튼
+	•	GPT 하단 퀵 액션 버튼: 일정 생성 · 근처 추천 · 포토스팟 · 맛집/카페 · 날씨·혼잡 · 일정 공유
+	•	사이드바: 채팅방별 플랜 관리(상태 뱃지, 공유/복제/삭제/알림)
+	•	주제 유도: 비여행 질문은 목적지/기간 등 역질문 → 기능 버튼 흐름으로 전환
+
+⸻
+
+LLM 운용 & 프롬프트
+	•	기본: Gemini 2.5 Flash (멀티모달, 0.3$/M 토큰)
+	•	승격(1회 제한): 텍스트 고난도→Gemini 2.5 Pro, 복잡 비전→GPT-4o
+	•	OCR 파이프라인: 전용 OCR → Flash로 정규화만(LLM OCR 금지)
+	•	페르소나: “여행 컨시어지” (간결/친절/현장감, 여행 맥락 유지)
+	•	출력: JSON 스키마 강제, max_output_tokens 256~512, 캐시 우선
+
+⸻
+
+사진 업로드 → 문맥형 응답 파이프라인(간단)
+	1.	위치 후보: EXIF(GPS/시간) → 실패 시 브라우저 위치 → 실패 시 비전(랜드마크/OCR) + 역지오코딩
+	2.	비전 분석: Flash Vision 1차, 필요 시 GPT-4o 승격(1회)
+	3.	문맥 결합: 내 Trip/Schedule, 날씨, 주변 Place 캐시 결합
+	4.	카드 응답: 장소 후보 확인, 포토스팟/포즈 팁, 주변 추천, 주의사항(+TTS)
+	5.	저장: PhotoAnalysis로 결과 캐시(동일 장소 재업로드시 0원)
+
+⸻
+
+비용/중복 호출 방지(원칙)
+	•	무료·저가 우선: Kakao/Naver/OSM, Gemini Flash
+	•	고가 API 예외 호출: Google Places/GPT-4o/이미지 생성은 사전 크레딧 안내 후
+	•	캐시/재사용: 동일·유사 요청은 DB/Redis 재사용, 응답 TTL/ETag
+	•	요청 병합: 동시 동일 키는 1회 외부 호출(Single-Flight)
+	•	멱등성: 티켓 파싱·일정 생성·이미지 생성은 멱등 키
+	•	필드 최소: Places fields 최소화, Autocomplete 세션 토큰, 입력 디바운스
+
+⸻
+
+크레딧/결제
+	•	정가: 15,000원 = 300 크레딧(1 크레딧 ≈ 2,000 토큰, Flash 원가≈0.8원/크레딧 수준)
+	•	흐름: POST /billing/orders → Mock KakaoPay → webhook /billing/kakaopay/webhook → CreditLedger(+300) → User.credits 갱신
+	•	사용 전 견적 표시 → 동의 시 홀드 → 실제 사용량 정산
+
+⸻
+
+DB 설계(단순 + 성능 우선)
+
+핵심 테이블(최소화된 정규화)
+	•	users(id, email, role, credits, created_at)
+	•	user_profile(user_id PK, style, prefs_json, photos_json)  ← JSON 컬럼로 단순화
+	•	chat_threads(id, user_id, title, created_at)
+	•	trips(id, user_id, thread_id, title, start_date, end_date, ai_summary, ai_tags, ai_notes, watch_enabled, created_at)
+	•	schedules(id, trip_id, day, start_time, end_time, place_id, tags, weather_risk)
+	•	places(id, name, lat, lng, category, meta_json)
+	•	trend_reviews(id, place_id, source, url, summary, tips_json, crowd_hours_json, photo_spots_json, created_at)
+	•	agent_messages(id, user_id, thread_id, trip_id, role, content_json, created_at)
+	•	documents(id, user_id, type, s3_url, parsed_json, created_at)
+	•	photo_analysis(id, user_id, exif_json, place_candidates_json, context_json, tips_json, created_at)
+	•	share_tokens(id, trip_id, scope, token, expires_at, created_by)
+	•	notification_channels(id, user_id, type, meta_json, enabled)
+	•	notification_jobs(id, user_id, schedule_id, send_at, channel, payload_json, status)
+	•	credit_ledger(id, user_id, delta, reason, provider, tokens, cost, created_at)
+	•	admin_audit_log(id, admin_id, action, target_type, target_id, meta_json, created_at)
+
+필수 인덱스(간단·효과 큰 것만)
+	•	FK 기본 인덱스 + 아래 조합:
+	•	trips(user_id, start_date, end_date)  (사용자별 조회·감시 스캔)
+	•	schedules(trip_id, day, start_time)   (플래너/감시 스캔)
+	•	places(category, lat, lng) + PostGIS/지오해시 대체로 lat,lng bbox 인덱스
+	•	trend_reviews(place_id, created_at)   (신규 요약 우선)
+	•	agent_messages(user_id, thread_id, created_at)
+	•	credit_ledger(user_id, created_at)
+	•	share_tokens(token, expires_at)
+	•	JSON 컬럼: 자주 조회하는 키는 생성 컬럼(generated column) + 인덱스 고려(후기 crowd_hours_json->day 등)
+
+성능·단순화 가이드
+	•	1차 정규화 + 얕은 JSON 혼합(스키마 복잡도↓, 마이그레이션 리스크↓)
+	•	핫패스 캐시: 장소 요약/경로 매트릭스/날씨/역지오코딩 2h~72h 캐시
+	•	페이지네이션: keyset 기반(created_at, id)
+	•	단순 조인 우선: N+1 방지(필요 필드만 select)
+	•	비동기 작업: OCR/요약/크롤링/알림은 큐 처리
+
+⸻
+
+API·모델 운용(요약)
+	•	LLM 라우팅: Flash 기본 → 품질 미달 시 1회 승격(Pro/4o)
+	•	토큰 상한: 엔드포인트별 max tokens 정책 파일
+	•	로깅: 모델/토큰/캐시 HIT/승격률/Places 호출량을 월별 대시보드로
+	•	권한: 모든 레코드 user_id 소유, Admin은 콘솔에서만(감사 로그 필수)
+
+⸻
+
+감시 & 알림(간단)
+	•	스케줄러(2~4회/일) → trips/schedules 스캔 → 날씨 API → weather_risk 갱신
+	•	임계 초과 시 대체안 초안 생성 → 사용자에게 알림(승인시 /trips/{id}/replan)
+	•	알림: 이메일/웹푸시(초기) → 카카오 알림톡 확장(중요 알림만)
+
+⸻
+
+외부 API 정책
+	•	지도/경로: Kakao/Naver/OSM 우선, Google Places는 최소 필드·세션토큰·디바운스·DB 캐시
+	•	날씨: 기상청(국내)/OpenWeather(해외)
+	•	후기 수집: MCP/크롤링 → 부분요약→합성요약(저토큰)
+
+⸻
+
+스프린트 개요(초간단)
+	1.	주차1: 유스케이스, 간결 ERD, API 초안, 도커, Auth 뼈대
+	2.	주차2–3(BE): 플래너/경로/사진분석 파이프라인, 파싱·저장, 캐시, 크레딧/로그
+	3.	주차4: 감시/알림, 공유/커뮤니티, 관리자 콘솔 1차, 비용 가드레일
+	4.	주차5–6(FE+고도화): 퀵 액션/사이드바, 접근성 튜닝, 결제(Mock), 통합 테스트/배포
+
+⸻
+
+고도화 로드맵(요약)
+	•	플래너 고도화: 제약 기반 최적화(예산/이동/체력), 영업/막차 하드컨스트레인트, 혼잡·날씨 가중치, 대체안 N개, 취향 학습
+	•	여행 메이트 매칭: 일정/취향 겹침 필터 → 스코어링 → 매칭 요청/수락 → DM(WebSocket), 신고/차단/리뷰

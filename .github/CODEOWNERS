@@ -1,0 +1,22 @@
+# 팀 깃허브 사용자명을 실제로 교체하세요.
+# 예) @team-lead, @be-1, @be-2, @be-3, @be-4, @docs-maintainer
+
+*                                   @team-lead
+docs/api/**                         @docs-maintainer @team-lead
+docs/usecases/**                    @team-lead
+docs/erd/**                         @team-lead
+docs/decisions/**                   @team-lead
+
+src/main/java/com/travelagent/auth/**        @be-1 @team-lead
+src/main/java/com/travelagent/user/**        @be-1 @team-lead
+src/main/java/com/travelagent/trip/**        @be-2 @team-lead
+src/main/java/com/travelagent/schedule/**    @be-2 @team-lead
+src/main/java/com/travelagent/chat/**        @be-3 @team-lead
+src/main/java/com/travelagent/external/**    @be-3 @team-lead
+src/main/java/com/travelagent/photo/**       @be-4 @team-lead
+src/main/java/com/travelagent/billing/**     @be-4 @team-lead
+src/main/java/com/travelagent/share/**       @be-4 @team-lead
+src/main/java/com/travelagent/common/**      @team-lead
+src/main/java/com/travelagent/config/**      @team-lead
+
+
